@@ -1,0 +1,633 @@
+---
+layout: null
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WRF Events — Fireball Observatory Catalogue</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css" />
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #070b14;
+      --surface:   #0d1525;
+      --panel:     #111c33;
+      --border:    #1e3055;
+      --teal:      #00d4aa;
+      --teal-dim:  #00967a;
+      --amber:     #f59e0b;
+      --amber-dim: #b37700;
+      --text:      #c8d8f0;
+      --text-dim:  #6a88b0;
+      --mono:      'Space Mono', monospace;
+      --sans:      'Syne', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 19px;
+      overflow: hidden;
+    }
+
+    /* ── Shell ── */
+    .shell {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      flex-wrap: wrap;
+      animation: pulse-border 4s ease-in-out infinite;
+    }
+
+    .logo img {
+      height: 216px;
+      width: auto;
+      display: block;
+    }
+
+    .filters {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+
+    .filter-label {
+      font-family: var(--mono);
+      font-size: 15px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    input[type="date"], input[type="text"] {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 15px;
+      padding: 7px 11px;
+      border-radius: 4px;
+      outline: none;
+      transition: border-color 0.15s;
+      color-scheme: dark;
+    }
+    input[type="date"]:focus,
+    input[type="text"]:focus {
+      border-color: var(--teal-dim);
+    }
+
+    .btn {
+      font-family: var(--mono);
+      font-size: 15px;
+      padding: 7px 16px;
+      border-radius: 4px;
+      border: 1px solid var(--teal-dim);
+      background: transparent;
+      color: var(--teal);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      letter-spacing: 0.05em;
+    }
+    .btn:hover      { background: var(--teal); color: var(--bg); }
+    .btn.reset      { border-color: var(--border); color: var(--text-dim); }
+    .btn.reset:hover { background: var(--border); color: var(--text); }
+
+    /* ── Main split ── */
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 560px;
+      overflow: hidden;
+    }
+
+    /* ── Map ── */
+    #map { width: 100%; height: 100%; background: #08111f; }
+
+    .leaflet-popup-content-wrapper {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 14px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+    .leaflet-popup-tip { background: var(--panel); }
+    .popup-title { color: var(--teal); font-weight: 700; margin-bottom: 6px; font-size: 16px; }
+    .popup-row   { color: var(--text-dim); line-height: 1.7; }
+    .popup-row span { color: var(--text); }
+
+    .fireball-marker {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--amber);
+      border: 2px solid #fff4;
+      box-shadow: 0 0 8px var(--amber), 0 0 20px var(--amber-dim);
+      transition: transform 0.15s;
+    }
+    .fireball-marker.selected {
+      background: var(--teal);
+      box-shadow: 0 0 10px var(--teal), 0 0 24px var(--teal-dim);
+      transform: scale(1.4);
+    }
+
+    /* ── Table panel ── */
+    .table-panel {
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 13px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      font-family: var(--mono);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+    }
+
+    #event-count {
+      font-family: var(--mono);
+      font-size: 15px;
+      color: var(--teal);
+    }
+
+    .table-scroll {
+      overflow-y: auto;
+      flex: 1;
+      padding: 0 0 12px;
+    }
+
+    /* ── DataTables overrides ── */
+    .dataTables_wrapper { padding: 8px 14px; }
+    .dataTables_filter  { display: none; }
+
+    .dataTables_length {
+      font-family: var(--mono);
+      font-size: 14px;
+      color: var(--text-dim);
+      padding: 6px 0;
+    }
+    .dataTables_length label { color: var(--text-dim); }
+    .dataTables_length select {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 14px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin: 0 5px;
+    }
+
+    .dataTables_info {
+      font-family: var(--mono);
+      font-size: 14px;
+      color: var(--text-dim);
+      padding: 6px 0 0 !important;
+    }
+
+    .dataTables_paginate {
+      font-family: var(--mono);
+      font-size: 14px;
+      padding-top: 6px !important;
+    }
+    .dataTables_paginate .paginate_button {
+      color: var(--text-dim) !important;
+      padding: 3px 9px !important;
+      border-radius: 3px !important;
+      background: transparent !important;
+      border: none !important;
+    }
+    .dataTables_paginate .paginate_button.current,
+    .dataTables_paginate .paginate_button.current:hover {
+      background: var(--teal) !important;
+      color: var(--bg) !important;
+      border: none !important;
+    }
+    .dataTables_paginate .paginate_button:hover {
+      background: var(--border) !important;
+      color: var(--text) !important;
+      border: none !important;
+    }
+
+    /* ── Events table ── */
+    table#events-table {
+      width: 100% !important;
+      border-collapse: collapse;
+    }
+
+    table#events-table thead th {
+      background: var(--panel);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 10px 9px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    table#events-table thead th.sorting:after      { content: ' ⇅'; opacity: 0.3; }
+    table#events-table thead th.sorting_asc:after  { content: ' ↑'; color: var(--teal); opacity: 1; }
+    table#events-table thead th.sorting_desc:after { content: ' ↓'; color: var(--teal); opacity: 1; }
+
+    table#events-table tbody tr {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    table#events-table tbody tr:hover { background: var(--panel); }
+    table#events-table tbody tr.selected-row {
+      background: #002e26;
+      border-left: 2px solid var(--teal);
+    }
+
+    table#events-table tbody td {
+      font-family: var(--mono);
+      font-size: 14px;
+      padding: 10px 9px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    td.event-id {
+      color: var(--amber);
+      font-weight: 700;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    td.coord  { color: var(--text-dim); }
+    td.nsteps { text-align: right; }
+
+    .badge {
+      display: inline-block;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    /* ── Detail drawer ── */
+    #detail-panel {
+      display: none;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+      padding: 14px 18px;
+      flex-shrink: 0;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    #detail-panel.open { display: block; }
+
+    .detail-title {
+      font-family: var(--mono);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+    .detail-title strong {
+      color: var(--teal);
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 15px;
+    }
+
+    .wrf-table { width: 100%; border-collapse: collapse; }
+
+    .wrf-table thead th {
+      font-family: var(--mono);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      padding: 0 12px 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      white-space: nowrap;
+    }
+    .wrf-table thead th:last-child { text-align: right; }
+
+    .wrf-table tbody tr             { border-bottom: 1px solid var(--border); }
+    .wrf-table tbody tr:last-child  { border-bottom: none; }
+
+    .wrf-table tbody td {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text);
+      padding: 8px 12px;
+      white-space: nowrap;
+    }
+    .wrf-table tbody td.steps {
+      color: var(--teal);
+      text-align: right;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--teal-dim); }
+
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(0,212,170,0); }
+      50%       { box-shadow: 0 0 12px 1px rgba(0,212,170,0.15); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="shell">
+
+  <header>
+    <div class="logo">
+      <img src="assets/logo.png" alt="WRF Events" />
+    </div>
+
+    <div class="filters">
+      <div class="filter-group">
+        <span class="filter-label">Search</span>
+        <input type="text" id="filter-text" placeholder="event id, YYYY-MM-DD…" style="width:260px" />
+      </div>
+    </div>
+  </header>
+
+  <div class="main">
+
+    <div id="map"></div>
+
+    <div class="table-panel">
+      <div class="panel-header">
+        <span class="panel-title">Events</span>
+        <span id="event-count">—</span>
+      </div>
+
+      <div class="table-scroll">
+        <table id="events-table" class="display">
+          <thead>
+            <tr>
+              <th>Event ID</th>
+              <th>Event Time (UTC)</th>
+              <th>Lat</th>
+              <th>Lon</th>
+              <th>WRF Runs</th>
+              <th>Sim Start</th>
+              <th>Sim End</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+
+      <div id="detail-panel">
+        <div class="detail-title" id="detail-title"></div>
+        <div id="detail-runs"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const RAW_ROWS = [
+  {% for row in site.data.wrf_events %}
+  {
+    event_id:    {{ row.EVENT_ID | jsonify }},
+    event_lat:   {{ row.EVENT_LAT | times: 1.0 }},
+    event_lon:   {{ row.EVENT_LON | times: 1.0 }},
+    event_time:  {{ row.EVENT_TIME | jsonify }},
+    time_start:  {{ row.time_start | jsonify }},
+    time_end:    {{ row.time_end | jsonify }},
+    lat_min:     {{ row.lat_min | times: 1.0 }},
+    lat_max:     {{ row.lat_max | times: 1.0 }},
+    lon_min:     {{ row.lon_min | times: 1.0 }},
+    lon_max:     {{ row.lon_max | times: 1.0 }},
+    sim_start:   {{ row.simulation_time_start | jsonify }},
+    n_timesteps: {{ row.n_timesteps | times: 1 }}
+  }{% unless forloop.last %},{% endunless %}
+  {% endfor %}
+];
+
+function groupEvents(rows) {
+  const map = {};
+  rows.forEach(r => {
+    if (!map[r.event_id]) {
+      map[r.event_id] = {
+        event_id: r.event_id, event_lat: r.event_lat, event_lon: r.event_lon,
+        event_time: r.event_time,
+        lat_min: r.lat_min, lat_max: r.lat_max,
+        lon_min: r.lon_min, lon_max: r.lon_max,
+        runs: []
+      };
+    }
+    map[r.event_id].runs.push({
+      time_start: r.time_start, time_end: r.time_end,
+      sim_start: r.sim_start,   n_timesteps: r.n_timesteps
+    });
+  });
+  return Object.values(map);
+}
+
+function fmtTime(s) {
+  if (!s) return '—';
+  return s.replace('T', ' ').replace(/_/g, ' ').replace(/:\d{2}$/, '');
+}
+function fmtCoord(v, pos, neg) {
+  return Math.abs(v).toFixed(3) + '° ' + (v >= 0 ? pos : neg);
+}
+
+/* ── Map ── */
+const leafMap = L.map('map', { zoomControl: true }).setView([20, 30], 2);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap contributors © CARTO',
+  subdomains: 'abcd', maxZoom: 19
+}).addTo(leafMap);
+
+const markersLayer = L.layerGroup().addTo(leafMap);
+const bboxLayer    = L.layerGroup().addTo(leafMap);
+let allEvents = [], selectedId = null, markerMap = {}, dt;
+
+function makeIcon(sel) {
+  return L.divIcon({
+    className: '',
+    html: `<div class="fireball-marker${sel ? ' selected' : ''}"></div>`,
+    iconSize: [14,14], iconAnchor: [7,7]
+  });
+}
+
+function selectEvent(id) {
+  if (selectedId && markerMap[selectedId])
+    markerMap[selectedId].setIcon(makeIcon(false));
+  bboxLayer.clearLayers();
+
+  if (selectedId === id) {
+    selectedId = null;
+    document.getElementById('detail-panel').classList.remove('open');
+    document.querySelectorAll('#events-table tbody tr.selected-row')
+      .forEach(r => r.classList.remove('selected-row'));
+    return;
+  }
+
+  selectedId = id;
+  const ev = allEvents.find(e => e.event_id === id);
+  if (!ev) return;
+
+  if (markerMap[id]) markerMap[id].setIcon(makeIcon(true));
+
+  L.rectangle(
+    [[ev.lat_min, ev.lon_min],[ev.lat_max, ev.lon_max]],
+    { color:'#00d4aa', weight:1.5, fillOpacity:0.06, dashArray:'4 4' }
+  ).addTo(bboxLayer);
+
+  leafMap.fitBounds(
+    L.latLngBounds([ev.lat_min,ev.lon_min],[ev.lat_max,ev.lon_max]).pad(0.3)
+  );
+
+  document.querySelectorAll('#events-table tbody tr').forEach(tr =>
+    tr.classList.toggle('selected-row', tr.dataset.id === id)
+  );
+
+  document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('detail-title').innerHTML =
+    `WRF Runs &mdash; <strong>${id}</strong>`;
+  document.getElementById('detail-runs').innerHTML = `
+    <table class="wrf-table">
+      <thead>
+        <tr>
+          <th>Sim Start</th>
+          <th>Sim End</th>
+          <th>Steps</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${ev.runs.map(r => `
+          <tr>
+            <td>${fmtTime(r.sim_start)}</td>
+            <td>${fmtTime(r.time_end)}</td>
+            <td class="steps">${r.n_timesteps}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function populateMarkers(events) {
+  markersLayer.clearLayers();
+  markerMap = {};
+  events.forEach(ev => {
+    const m = L.marker([ev.event_lat, ev.event_lon], { icon: makeIcon(ev.event_id === selectedId) });
+    m.bindPopup(`
+      <div class="popup-title">${ev.event_id}</div>
+      <div class="popup-row">Time: <span>${fmtTime(ev.event_time)}</span></div>
+      <div class="popup-row">Lat: <span>${fmtCoord(ev.event_lat,'N','S')}</span>&ensp;Lon: <span>${fmtCoord(ev.event_lon,'E','W')}</span></div>
+      <div class="popup-row">WRF runs: <span>${ev.runs.length}</span></div>
+    `);
+    m.on('click', () => selectEvent(ev.event_id));
+    m.addTo(markersLayer);
+    markerMap[ev.event_id] = m;
+  });
+}
+
+function buildTable(events) {
+  document.getElementById('event-count').textContent =
+    events.length + ' event' + (events.length !== 1 ? 's' : '');
+  if (dt) dt.destroy();
+  document.getElementById('table-body').innerHTML = '';
+
+  events.forEach(ev => {
+    const tr = document.createElement('tr');
+    tr.dataset.id = ev.event_id;
+    const simStart = ev.runs.map(r => r.sim_start).sort()[0] || '—';
+    const simEnd   = ev.runs.map(r => r.time_end).sort().pop() || '—';
+    tr.innerHTML = `
+      <td class="event-id" title="${ev.event_id}">${ev.event_id}</td>
+      <td>${fmtTime(ev.event_time)}</td>
+      <td class="coord">${fmtCoord(ev.event_lat,'N','S')}</td>
+      <td class="coord">${fmtCoord(ev.event_lon,'E','W')}</td>
+      <td class="nsteps"><span class="badge">${ev.runs.length}</span></td>
+      <td>${fmtTime(simStart)}</td>
+      <td>${fmtTime(simEnd)}</td>`;
+    document.getElementById('table-body').appendChild(tr);
+  });
+
+  dt = $('#events-table').DataTable({
+    pageLength: 15, lengthMenu: [10,15,25,50], order: [[1,'desc']],
+    columnDefs: [{ orderable: false, targets: 4 }],
+    language: { info: '_START_–_END_ of _TOTAL_', infoEmpty: 'No events' }
+  });
+  $('#events-table tbody').on('click','tr', function() { selectEvent(this.dataset.id); });
+}
+
+document.getElementById('filter-text').addEventListener('input', () => {
+  const text = document.getElementById('filter-text').value.trim().toLowerCase();
+
+  const filtered = allEvents.filter(ev =>
+    ev.event_id.toLowerCase().includes(text) ||
+    ev.event_time.slice(0, 10).includes(text)
+  );
+
+  buildTable(filtered);
+  populateMarkers(filtered);
+  if (selectedId && !filtered.find(e => e.event_id === selectedId)) {
+    selectedId = null;
+    bboxLayer.clearLayers();
+    document.getElementById('detail-panel').classList.remove('open');
+  }
+});
+
+allEvents = groupEvents(RAW_ROWS);
+buildTable(allEvents);
+populateMarkers(allEvents);
+</script>
+</body>
+</html>
