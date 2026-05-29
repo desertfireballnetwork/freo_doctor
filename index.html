@@ -6,7 +6,9 @@ layout: null
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WRF Events — Fireball Observatory Catalogue</title>
+  <title>WRF Models for Meteorite Falls and Space-Debris Catalogue</title>
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E༄%3C/text%3E%3C/svg%3E">
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -297,15 +299,21 @@ layout: null
       white-space: nowrap;
     }
 
+    .panel-title a { opacity: 0.5; transition: opacity 0.15s; vertical-align: middle; color: var(--text-dim); }
+    .panel-title a:hover { opacity: 1; }
+
+    th.col-dl, td.dl-cell { width: 32px; min-width: 32px; max-width: 32px; padding: 6px 4px; text-align: center; }
+    .dl-btn img { width: 20px; height: 20px; display: block; opacity: 0.7; transition: opacity 0.15s; }
+    .dl-btn:hover img { opacity: 1; }
+
     td.event-id {
       color: var(--amber);
       font-weight: 700;
-      max-width: 140px;
+      max-width: 220px;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     td.coord  { color: var(--text-dim); }
-    td.nsteps { text-align: right; }
 
     .badge {
       display: inline-block;
@@ -359,8 +367,10 @@ layout: null
     }
     .wrf-table thead th:last-child { text-align: right; }
 
-    .wrf-table tbody tr             { border-bottom: 1px solid var(--border); }
+    .wrf-table tbody tr             { border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
     .wrf-table tbody tr:last-child  { border-bottom: none; }
+    .wrf-table tbody tr:hover       { background: var(--panel); }
+    .wrf-table tbody tr.selected-run { background: #002e26; border-left: 2px solid var(--teal); }
 
     .wrf-table tbody td {
       font-family: var(--mono);
@@ -409,7 +419,7 @@ layout: null
 
     <div class="table-panel">
       <div class="panel-header">
-        <span class="panel-title">Events</span>
+        <span class="panel-title">Events &ensp;<a href="assets/WRF_models_meteorite_space-debris_archive_catalogue.csv" download>(download metadata catalogue)</a></span>
         <span id="event-count">—</span>
       </div>
 
@@ -417,13 +427,11 @@ layout: null
         <table id="events-table" class="display">
           <thead>
             <tr>
+              <th class="col-dl"><svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='currentColor' opacity='1.0'><path d='M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4zm-5 16a3 3 0 110-6 3 3 0 010 6zm3-10H5V5h10v4z'/></svg></th>
               <th>Event ID</th>
               <th>Event Time (UTC)</th>
               <th>Lat</th>
               <th>Lon</th>
-              <th>WRF Runs</th>
-              <th>Sim Start</th>
-              <th>Sim End</th>
             </tr>
           </thead>
           <tbody id="table-body"></tbody>
@@ -441,7 +449,7 @@ layout: null
 
 <script>
 const RAW_ROWS = [
-  {% for row in site.data.wrf_events %}
+  {% for row in site.data.WRF_models_meteorite_space-debris_archive_catalogue %}
   {
     event_id:    {{ row.EVENT_ID | jsonify }},
     event_lat:   {{ row.EVENT_LAT | times: 1.0 }},
@@ -453,8 +461,11 @@ const RAW_ROWS = [
     lat_max:     {{ row.lat_max | times: 1.0 }},
     lon_min:     {{ row.lon_min | times: 1.0 }},
     lon_max:     {{ row.lon_max | times: 1.0 }},
-    sim_start:   {{ row.simulation_time_start | jsonify }},
-    n_timesteps: {{ row.n_timesteps | times: 1 }}
+    sim_start:        {{ row.simulation_time_start | jsonify }},
+    n_timesteps:      {{ row.n_timesteps_kept | times: 1 }},
+    n_timesteps_sim:  {{ row.n_timesteps_simulation | times: 1 }},
+    zenodo_file_url:      {{ row.zenodo_file_url | jsonify }},
+    spatial_resolution_km: {{ row.spatial_resolution_km | times: 1.0 }}
   }{% unless forloop.last %},{% endunless %}
   {% endfor %}
 ];
@@ -466,14 +477,16 @@ function groupEvents(rows) {
       map[r.event_id] = {
         event_id: r.event_id, event_lat: r.event_lat, event_lon: r.event_lon,
         event_time: r.event_time,
-        lat_min: r.lat_min, lat_max: r.lat_max,
-        lon_min: r.lon_min, lon_max: r.lon_max,
         runs: []
       };
     }
     map[r.event_id].runs.push({
       time_start: r.time_start, time_end: r.time_end,
-      sim_start: r.sim_start,   n_timesteps: r.n_timesteps
+      sim_start: r.sim_start,   n_timesteps: r.n_timesteps, n_timesteps_sim: r.n_timesteps_sim,
+      lat_min: r.lat_min, lat_max: r.lat_max,
+      lon_min: r.lon_min, lon_max: r.lon_max,
+      zenodo_file_url: r.zenodo_file_url,
+      spatial_resolution_km: r.spatial_resolution_km
     });
   });
   return Object.values(map);
@@ -483,8 +496,8 @@ function fmtTime(s) {
   if (!s) return '—';
   return s.replace('T', ' ').replace(/_/g, ' ').replace(/:\d{2}$/, '');
 }
-function fmtCoord(v, pos, neg) {
-  return Math.abs(v).toFixed(3) + '° ' + (v >= 0 ? pos : neg);
+function fmtCoord(v) {
+  return v.toFixed(3) + '°';
 }
 
 /* ── Map ── */
@@ -496,7 +509,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
 
 const markersLayer = L.layerGroup().addTo(leafMap);
 const bboxLayer    = L.layerGroup().addTo(leafMap);
-let allEvents = [], selectedId = null, markerMap = {}, dt;
+let allEvents = [], selectedId = null, selectedRunIdx = null, markerMap = {}, dt;
 
 function makeIcon(sel) {
   return L.divIcon({
@@ -510,6 +523,7 @@ function selectEvent(id) {
   if (selectedId && markerMap[selectedId])
     markerMap[selectedId].setIcon(makeIcon(false));
   bboxLayer.clearLayers();
+  selectedRunIdx = null;
 
   if (selectedId === id) {
     selectedId = null;
@@ -525,14 +539,7 @@ function selectEvent(id) {
 
   if (markerMap[id]) markerMap[id].setIcon(makeIcon(true));
 
-  L.rectangle(
-    [[ev.lat_min, ev.lon_min],[ev.lat_max, ev.lon_max]],
-    { color:'#00d4aa', weight:1.5, fillOpacity:0.06, dashArray:'4 4' }
-  ).addTo(bboxLayer);
-
-  leafMap.fitBounds(
-    L.latLngBounds([ev.lat_min,ev.lon_min],[ev.lat_max,ev.lon_max]).pad(0.3)
-  );
+  leafMap.setView([ev.event_lat, ev.event_lon], Math.max(leafMap.getZoom(), 5));
 
   document.querySelectorAll('#events-table tbody tr').forEach(tr =>
     tr.classList.toggle('selected-row', tr.dataset.id === id)
@@ -547,18 +554,48 @@ function selectEvent(id) {
         <tr>
           <th>Sim Start</th>
           <th>Sim End</th>
-          <th>Steps</th>
+          <th>Res (km)</th>
+          <th>Timesteps</th>
         </tr>
       </thead>
       <tbody>
-        ${ev.runs.map(r => `
-          <tr>
+        ${ev.runs.map((r, i) => `
+          <tr data-run-idx="${i}">
             <td>${fmtTime(r.sim_start)}</td>
             <td>${fmtTime(r.time_end)}</td>
-            <td class="steps">${r.n_timesteps}</td>
+            <td>${r.spatial_resolution_km || '—'}</td>
+            <td class="steps">${r.n_timesteps}/${r.n_timesteps_sim}</td>
           </tr>`).join('')}
       </tbody>
     </table>`;
+}
+
+function selectRun(runIdx) {
+  bboxLayer.clearLayers();
+  const ev = allEvents.find(e => e.event_id === selectedId);
+  if (!ev) return;
+
+  document.querySelectorAll('#detail-runs .wrf-table tbody tr')
+    .forEach(tr => tr.classList.remove('selected-run'));
+
+  if (selectedRunIdx === runIdx) {
+    selectedRunIdx = null;
+    return;
+  }
+
+  selectedRunIdx = runIdx;
+  const run = ev.runs[runIdx];
+  document.querySelectorAll('#detail-runs .wrf-table tbody tr')[runIdx]
+    .classList.add('selected-run');
+
+  L.rectangle(
+    [[run.lat_min, run.lon_min],[run.lat_max, run.lon_max]],
+    { color:'#00d4aa', weight:1.5, fillOpacity:0.06, dashArray:'4 4' }
+  ).addTo(bboxLayer);
+
+  leafMap.fitBounds(
+    L.latLngBounds([run.lat_min, run.lon_min],[run.lat_max, run.lon_max]).pad(0.3)
+  );
 }
 
 function populateMarkers(events) {
@@ -569,7 +606,7 @@ function populateMarkers(events) {
     m.bindPopup(`
       <div class="popup-title">${ev.event_id}</div>
       <div class="popup-row">Time: <span>${fmtTime(ev.event_time)}</span></div>
-      <div class="popup-row">Lat: <span>${fmtCoord(ev.event_lat,'N','S')}</span>&ensp;Lon: <span>${fmtCoord(ev.event_lon,'E','W')}</span></div>
+      <div class="popup-row">Lat: <span>${fmtCoord(ev.event_lat)}</span>&ensp;Lon: <span>${fmtCoord(ev.event_lon)}</span></div>
       <div class="popup-row">WRF runs: <span>${ev.runs.length}</span></div>
     `);
     m.on('click', () => selectEvent(ev.event_id));
@@ -587,25 +624,25 @@ function buildTable(events) {
   events.forEach(ev => {
     const tr = document.createElement('tr');
     tr.dataset.id = ev.event_id;
-    const simStart = ev.runs.map(r => r.sim_start).sort()[0] || '—';
-    const simEnd   = ev.runs.map(r => r.time_end).sort().pop() || '—';
     tr.innerHTML = `
+      <td class="dl-cell">${(() => { const u = ev.runs.find(r => r.zenodo_file_url)?.zenodo_file_url; return u ? `<a class="dl-btn" href="${u}" target="_blank" onclick="event.stopPropagation()" title="Download from Zenodo"><img src="https://about.zenodo.org/static/img/icons/zenodo-icon-white.ico" alt="Zenodo" /></a>` : ''; })()}</td>
       <td class="event-id" title="${ev.event_id}">${ev.event_id}</td>
       <td>${fmtTime(ev.event_time)}</td>
-      <td class="coord">${fmtCoord(ev.event_lat,'N','S')}</td>
-      <td class="coord">${fmtCoord(ev.event_lon,'E','W')}</td>
-      <td class="nsteps"><span class="badge">${ev.runs.length}</span></td>
-      <td>${fmtTime(simStart)}</td>
-      <td>${fmtTime(simEnd)}</td>`;
+      <td class="coord">${fmtCoord(ev.event_lat)}</td>
+      <td class="coord">${fmtCoord(ev.event_lon)}</td>
+`;
     document.getElementById('table-body').appendChild(tr);
   });
 
   dt = $('#events-table').DataTable({
-    pageLength: 15, lengthMenu: [10,15,25,50], order: [[1,'desc']],
-    columnDefs: [{ orderable: false, targets: 4 }],
+    pageLength: 15, lengthMenu: [10,15,25,50],
+    order: [[2, 'desc']],
+    columnDefs: [
+      { orderable: false, targets: 0 },
+      { width: '32px', targets: 0 }
+    ],
     language: { info: '_START_–_END_ of _TOTAL_', infoEmpty: 'No events' }
   });
-  $('#events-table tbody').on('click','tr', function() { selectEvent(this.dataset.id); });
 }
 
 document.getElementById('filter-text').addEventListener('input', () => {
@@ -625,9 +662,15 @@ document.getElementById('filter-text').addEventListener('input', () => {
   }
 });
 
+document.getElementById('detail-runs').addEventListener('click', function(e) {
+  const tr = e.target.closest('tr[data-run-idx]');
+  if (tr) selectRun(parseInt(tr.dataset.runIdx));
+});
+
 allEvents = groupEvents(RAW_ROWS);
 buildTable(allEvents);
 populateMarkers(allEvents);
+$('#events-table tbody').on('click', 'tr', function() { selectEvent(this.dataset.id); });
 </script>
 </body>
 </html>
