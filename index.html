@@ -73,6 +73,37 @@ layout: null
       display: block;
     }
 
+    .header-info {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .header-title {
+      font-family: var(--sans);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.01em;
+    }
+
+    .header-meta {
+      font-family: var(--mono);
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+
+    .header-link {
+      color: var(--teal);
+      text-decoration: none;
+    }
+    .header-link:hover { text-decoration: underline; }
+
+    .header-sep {
+      margin: 0 6px;
+      color: var(--border);
+    }
+
     .filters {
       display: flex;
       align-items: center;
@@ -133,6 +164,14 @@ layout: null
       display: grid;
       grid-template-columns: 1fr 560px;
       overflow: hidden;
+    }
+
+    @media (max-width: 1300px) {
+      .main { grid-template-columns: 1fr 380px; }
+    }
+
+    @media (max-width: 900px) {
+      .main { grid-template-columns: 1fr 280px; }
     }
 
     /* ── Map ── */
@@ -302,9 +341,55 @@ layout: null
     .panel-title a { opacity: 0.5; transition: opacity 0.15s; vertical-align: middle; color: var(--text-dim); }
     .panel-title a:hover { opacity: 1; }
 
-    th.col-dl, td.dl-cell { width: 32px; min-width: 32px; max-width: 32px; padding: 6px 4px; text-align: center; }
+    th.col-dl, td.dl-cell, th.col-plot, td.plot-cell {
+      width: 32px; min-width: 32px; max-width: 32px; padding: 6px 4px; text-align: center;
+    }
     .dl-btn img { width: 20px; height: 20px; display: block; opacity: 0.7; transition: opacity 0.15s; }
     .dl-btn:hover img { opacity: 1; }
+    .plot-btn { background: none; border: none; cursor: pointer; padding: 0; line-height: 0; color: var(--teal); opacity: 0.6; transition: opacity 0.15s; }
+    .plot-btn:hover { opacity: 1; }
+
+    /* ── Plot lightbox ── */
+    #plot-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.82);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+    }
+    #plot-overlay.open { display: flex; }
+    #plot-box {
+      position: relative;
+      max-width: 92vw;
+      max-height: 92vh;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      box-shadow: 0 16px 64px rgba(0,0,0,0.8);
+    }
+    #plot-box img {
+      display: block;
+      max-width: 100%;
+      max-height: calc(92vh - 60px);
+      border-radius: 3px;
+    }
+    #plot-title {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--teal);
+      padding: 0 4px 8px;
+    }
+    #plot-close {
+      position: absolute;
+      top: 8px; right: 10px;
+      background: none; border: none;
+      color: var(--text-dim); font-size: 20px;
+      cursor: pointer; line-height: 1;
+      transition: color 0.15s;
+    }
+    #plot-close:hover { color: var(--text); }
 
     td.event-id {
       color: var(--amber);
@@ -405,6 +490,15 @@ layout: null
       <img src="assets/logo.png" alt="WRF Events" />
     </div>
 
+    <div class="header-info">
+      <h1 class="header-title">Catalogue of WRF Atmopsheric Models for Meteorite Falls and Space Debris</h1>
+      <div class="header-meta">
+        <a class="header-link" href="https://dfn.gfo.rocks/wrf_atmosperic_modeling.html" target="_blank" rel="noopener">Documentation</a>
+        <span class="header-sep">·</span>
+        Contact: <a class="header-link" href="https://dfn.gfo.rocks/#people" target="_blank" rel="noopener">Hadrien Devillepoix</a>
+      </div>
+    </div>
+
     <div class="filters">
       <div class="filter-group">
         <span class="filter-label">Search</span>
@@ -428,6 +522,7 @@ layout: null
           <thead>
             <tr>
               <th class="col-dl"><svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='currentColor' opacity='1.0'><path d='M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4zm-5 16a3 3 0 110-6 3 3 0 010 6zm3-10H5V5h10v4z'/></svg></th>
+              <th class="col-plot"><svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='currentColor' opacity='1.0'><path d='M3 3v18h18V3H3zm16 16H5V5h14v14zM7 14h2v3H7v-3zm4-4h2v7h-2v-7zm4-3h2v10h-2V7z'/></svg></th>
               <th>Event ID</th>
               <th>Event Time (UTC)</th>
               <th>Lat</th>
@@ -447,7 +542,26 @@ layout: null
   </div>
 </div>
 
+<!-- Plot lightbox -->
+<div id="plot-overlay">
+  <div id="plot-box">
+    <button id="plot-close" title="Close">&times;</button>
+    <div id="plot-title"></div>
+    <img id="plot-img" src="" alt="Wind profile comparison" />
+  </div>
+</div>
+
 <script>
+/* Event IDs that have a wind profile comparison plot */
+{% assign plot_ids = "" | split: "" %}
+{% for f in site.static_files %}
+  {% if f.path contains "vertical_profiles_plots" %}
+    {% assign stem = f.basename | remove: "_wind_profiles_comparison" %}
+    {% assign plot_ids = plot_ids | push: stem %}
+  {% endif %}
+{% endfor %}
+const PLOT_IDS = new Set({{ plot_ids | jsonify }});
+
 const RAW_ROWS = [
   {% for row in site.data.WRF_models_meteorite_space-debris_archive_catalogue %}
   {
@@ -541,9 +655,20 @@ function selectEvent(id) {
 
   leafMap.setView([ev.event_lat, ev.event_lon], Math.max(leafMap.getZoom(), 5));
 
+  /* Navigate DataTables to the page containing this row, then highlight it */
+  if (dt) {
+    const nodes = dt.rows({ order: 'current', search: 'applied' }).nodes().toArray();
+    const pos = nodes.findIndex(n => n.dataset.id === id);
+    if (pos >= 0) {
+      const targetPage = Math.floor(pos / dt.page.len());
+      if (dt.page() !== targetPage) dt.page(targetPage).draw('page');
+    }
+  }
   document.querySelectorAll('#events-table tbody tr').forEach(tr =>
     tr.classList.toggle('selected-row', tr.dataset.id === id)
   );
+  const selectedRow = document.querySelector('#events-table tbody tr.selected-row');
+  if (selectedRow) selectedRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 
   document.getElementById('detail-panel').classList.add('open');
   document.getElementById('detail-title').innerHTML =
@@ -624,8 +749,12 @@ function buildTable(events) {
   events.forEach(ev => {
     const tr = document.createElement('tr');
     tr.dataset.id = ev.event_id;
+    const plotCell = PLOT_IDS.has(ev.event_id)
+      ? `<button class="plot-btn" onclick="event.stopPropagation();openPlot('${ev.event_id}')" title="Wind profile comparison"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='currentColor'><path d='M3 3v18h18V3H3zm16 16H5V5h14v14zM7 14h2v3H7v-3zm4-4h2v7h-2v-7zm4-3h2v10h-2V7z'/></svg></button>`
+      : '';
     tr.innerHTML = `
       <td class="dl-cell">${(() => { const u = ev.runs.find(r => r.zenodo_file_url)?.zenodo_file_url; return u ? `<a class="dl-btn" href="${u}" target="_blank" onclick="event.stopPropagation()" title="Download from Zenodo"><img src="https://about.zenodo.org/static/img/icons/zenodo-icon-white.ico" alt="Zenodo" /></a>` : ''; })()}</td>
+      <td class="plot-cell">${plotCell}</td>
       <td class="event-id" title="${ev.event_id}">${ev.event_id}</td>
       <td>${fmtTime(ev.event_time)}</td>
       <td class="coord">${fmtCoord(ev.event_lat)}</td>
@@ -636,10 +765,10 @@ function buildTable(events) {
 
   dt = $('#events-table').DataTable({
     pageLength: 15, lengthMenu: [10,15,25,50],
-    order: [[2, 'desc']],
+    order: [[3, 'desc']],
     columnDefs: [
-      { orderable: false, targets: 0 },
-      { width: '32px', targets: 0 }
+      { orderable: false, targets: [0, 1] },
+      { width: '32px', targets: [0, 1] }
     ],
     language: { info: '_START_–_END_ of _TOTAL_', infoEmpty: 'No events' }
   });
@@ -665,6 +794,26 @@ document.getElementById('filter-text').addEventListener('input', () => {
 document.getElementById('detail-runs').addEventListener('click', function(e) {
   const tr = e.target.closest('tr[data-run-idx]');
   if (tr) selectRun(parseInt(tr.dataset.runIdx));
+});
+
+function openPlot(eventId) {
+  document.getElementById('plot-img').src =
+    `assets/vertical_profiles_plots/${eventId}_wind_profiles_comparison.png`;
+  document.getElementById('plot-title').textContent = eventId;
+  document.getElementById('plot-overlay').classList.add('open');
+}
+
+function closePlot() {
+  document.getElementById('plot-overlay').classList.remove('open');
+  document.getElementById('plot-img').src = '';
+}
+
+document.getElementById('plot-close').addEventListener('click', closePlot);
+document.getElementById('plot-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closePlot();
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closePlot();
 });
 
 allEvents = groupEvents(RAW_ROWS);
