@@ -194,14 +194,14 @@ layout: null
     .fireball-marker {
       width: 14px; height: 14px;
       border-radius: 50%;
-      background: var(--amber);
-      border: 2px solid #fff4;
-      box-shadow: 0 0 8px var(--amber), 0 0 20px var(--amber-dim);
+      background: #e63946;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.5);
       transition: transform 0.15s;
     }
     .fireball-marker.selected {
-      background: var(--teal);
-      box-shadow: 0 0 10px var(--teal), 0 0 24px var(--teal-dim);
+      background: #0074d9;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.6);
       transform: scale(1.4);
     }
 
@@ -618,9 +618,9 @@ function fmtCoord(v) {
 
 /* ── Map ── */
 const leafMap = L.map('map', { zoomControl: true }).setView([20, 30], 2);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-  attribution: '© OpenStreetMap contributors © CARTO',
-  subdomains: 'abcd', maxZoom: 19
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
+  subdomains: 'abc', maxZoom: 19
 }).addTo(leafMap);
 
 const markersLayer = L.layerGroup().addTo(leafMap);
